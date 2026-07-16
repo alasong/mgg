@@ -7,41 +7,31 @@ from unittest.mock import patch
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mgg import _save_task, _load_task, die, _find_choice_label, _print_status_line
+from mgg.persistence import _save_task, _load_task, _find_choice_label
+from mgg.utils import die, _print_status_line
 
 
 def test_save_and_load_task():
     """Save task state then load it back."""
     task = {"id": "test123", "prompt": "do something", "status": "running", "skill": "pdu"}
     with tempfile.TemporaryDirectory() as tmp:
-        # Use temporary MGG_DIR
-        import mgg
-        original_dir = mgg.TASKS_DIR
-        try:
-            mgg.TASKS_DIR = Path(tmp) / "tasks"
+        with patch("mgg.persistence.TASKS_DIR", Path(tmp) / "tasks"):
             _save_task(task)
             loaded = _load_task("test123")
             assert loaded["id"] == "test123"
             assert loaded["prompt"] == "do something"
             assert loaded["status"] == "running"
-        finally:
-            mgg.TASKS_DIR = original_dir
 
 
 def test_load_nonexistent():
     """Load non-existent task raises SystemExit."""
     with tempfile.TemporaryDirectory() as tmp:
-        import mgg
-        original_dir = mgg.TASKS_DIR
-        try:
-            mgg.TASKS_DIR = Path(tmp) / "tasks"
+        with patch("mgg.persistence.TASKS_DIR", Path(tmp) / "tasks"):
             try:
                 _load_task("no_such_task")
                 assert False, "should have raised SystemExit"
             except SystemExit:
                 pass
-        finally:
-            mgg.TASKS_DIR = original_dir
 
 
 def test_save_updates_existing():
@@ -49,17 +39,12 @@ def test_save_updates_existing():
     task = {"id": "test456", "status": "running"}
     updated = {"id": "test456", "status": "done", "result": "ok"}
     with tempfile.TemporaryDirectory() as tmp:
-        import mgg
-        original_dir = mgg.TASKS_DIR
-        try:
-            mgg.TASKS_DIR = Path(tmp) / "tasks"
+        with patch("mgg.persistence.TASKS_DIR", Path(tmp) / "tasks"):
             _save_task(task)
             _save_task(updated)
             loaded = _load_task("test456")
             assert loaded["status"] == "done"
             assert loaded["result"] == "ok"
-        finally:
-            mgg.TASKS_DIR = original_dir
 
 
 def test_die_exits_with_message():

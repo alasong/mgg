@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mgg import _parse_claude_output
+from mgg.executor import _parse_claude_output
 
 
 def test_parse_simple_result():

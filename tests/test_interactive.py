@@ -7,8 +7,7 @@ from unittest.mock import patch, MagicMock
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mgg import (_build_claude_args, _run_claude_with_session,
-                 _run_interactive_loop, MAX_INTERACTIVE_ROUNDS)
+from mgg.executor import _build_claude_args, _run_claude_with_session, _run_interactive_loop, MAX_INTERACTIVE_ROUNDS
 
 
 # ── _build_claude_args with session ─────────────────────────────────────
@@ -41,7 +40,7 @@ def test_build_args_session_no_skill():
 # ── _run_claude_with_session ────────────────────────────────────────────
 
 
-@patch("mgg.subprocess.run")
+@patch("mgg.executor.subprocess.run")
 def test_run_claude_with_session_basic(mock_run):
     """Basic session run returns parsed result."""
     mock_run.return_value = MagicMock(
@@ -56,7 +55,7 @@ def test_run_claude_with_session_basic(mock_run):
     assert result["exit_code"] == 0
 
 
-@patch("mgg.subprocess.run")
+@patch("mgg.executor.subprocess.run")
 def test_run_claude_with_session_inherits_id(mock_run):
     """Inherit session_id when claude doesn't return one."""
     mock_run.return_value = MagicMock(
@@ -68,7 +67,7 @@ def test_run_claude_with_session_inherits_id(mock_run):
     assert result["session_id"] == "sess_1"
 
 
-@patch("mgg.subprocess.run")
+@patch("mgg.executor.subprocess.run")
 def test_run_claude_with_session_failure(mock_run):
     """Failed subprocess returns non-zero exit code."""
     mock_run.return_value = MagicMock(
@@ -91,7 +90,6 @@ def _mock_subprocess_result(text: str, session_id: str | None = "sess_1",
     for line in text.strip().split("\n"):
         if line:
             lines.append(line)
-    # Always emit a result JSON line
     result_line = json.dumps({
         "type": "result", "result": text,
         "session_id": session_id, "total_cost_usd": cost
@@ -99,8 +97,8 @@ def _mock_subprocess_result(text: str, session_id: str | None = "sess_1",
     return MagicMock(returncode=0, stdout=result_line + "\n", text="")
 
 
-@patch("mgg.subprocess.run")
-@patch("mgg._prompt_human_for_decision", return_value=None)
+@patch("mgg.executor.subprocess.run")
+@patch("mgg.executor._prompt_human_for_decision", return_value=None)
 def test_interactive_loop_no_decision(mock_prompt, mock_run):
     """No decision in output = single round, no human prompt."""
     mock_run.return_value = _mock_subprocess_result("task done")
@@ -110,8 +108,8 @@ def test_interactive_loop_no_decision(mock_prompt, mock_run):
     assert result["session_id"] == "sess_1"
 
 
-@patch("mgg.subprocess.run")
-@patch("mgg._prompt_human_for_decision", return_value="A")
+@patch("mgg.executor.subprocess.run")
+@patch("mgg.executor._prompt_human_for_decision", return_value="A")
 def test_interactive_loop_with_decision(mock_prompt, mock_run):
     """Decision in output triggers follow-up round."""
     responses = iter([
@@ -126,8 +124,8 @@ def test_interactive_loop_with_decision(mock_prompt, mock_run):
     assert "round 2 done" in result["text"]
 
 
-@patch("mgg.subprocess.run")
-@patch("mgg._prompt_human_for_decision", return_value="A")
+@patch("mgg.executor.subprocess.run")
+@patch("mgg.executor._prompt_human_for_decision", return_value="A")
 def test_interactive_loop_skips_decision(mock_prompt, mock_run):
     """User skipping decision breaks the loop."""
     mock_run.return_value = _mock_subprocess_text(
@@ -138,8 +136,8 @@ def test_interactive_loop_skips_decision(mock_prompt, mock_run):
     assert mock_prompt.call_count == 1
 
 
-@patch("mgg.subprocess.run")
-@patch("mgg._prompt_human_for_decision", return_value="A")
+@patch("mgg.executor.subprocess.run")
+@patch("mgg.executor._prompt_human_for_decision", return_value="A")
 def test_interactive_loop_max_rounds(mock_prompt, mock_run):
     """Max rounds limit is enforced."""
     decision_text = '```json\n{"question":"again?","options":[{"id":"A","label":"A"},{"id":"B","label":"B"}]}\n```'
@@ -152,8 +150,24 @@ def test_interactive_loop_max_rounds(mock_prompt, mock_run):
     assert mock_prompt.call_count == MAX_INTERACTIVE_ROUNDS - 1
 
 
-@patch("mgg.subprocess.run")
-@patch("mgg._prompt_human_for_decision", return_value="A")
+@patch("mgg.executor.subprocess.run")
+@patch("mgg.executor._prompt_human_for_decision", return_value="A")
+def test_interactive_loop_skill_max_rounds(mock_prompt, mock_run):
+    """Skill-declared max_interactive_rounds overrides default."""
+    decision_text = '```json\n{"question":"again?","options":[{"id":"A","label":"A"},{"id":"B","label":"B"}]}\n```'
+
+    def side_effect(*args, **kwargs):
+        return _mock_subprocess_text(decision_text)
+
+    mock_run.side_effect = side_effect
+    # "paa" skill declares max_interactive_rounds: 10
+    result = _run_interactive_loop("loop task", "paa")
+    # With max_interactive_rounds=10, prompt is called 9 times (rounds-1)
+    assert mock_prompt.call_count == 9
+
+
+@patch("mgg.executor.subprocess.run")
+@patch("mgg.executor._prompt_human_for_decision", return_value="A")
 def test_interactive_loop_accumulates_cost(mock_prompt, mock_run):
     """Cost accumulates across rounds."""
     responses = iter([
@@ -168,8 +182,8 @@ def test_interactive_loop_accumulates_cost(mock_prompt, mock_run):
     assert result["cost_usd"] == 0.05  # 0.02 + 0.03
 
 
-@patch("mgg.subprocess.run")
-@patch("mgg._prompt_human_for_decision", return_value="A")
+@patch("mgg.executor.subprocess.run")
+@patch("mgg.executor._prompt_human_for_decision", return_value="A")
 def test_interactive_loop_merges_text(mock_prompt, mock_run):
     """Text from multiple rounds is merged."""
     responses = iter([

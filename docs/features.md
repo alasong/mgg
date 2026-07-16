@@ -4,11 +4,21 @@
 
 | 命令 | 功能 | 参数 | 说明 |
 |------|------|------|------|
-| `mgg run <prompt>` | 执行新任务 | `--skill/-s`, `--no-skill`, `--dep`, `--inject`, `--interactive/-i` | 派发 Claude Code 子进程执行任务 |
+| `mgg run <prompt...>` | 执行新任务 | `--skill/-s`, `--no-skill`, `--dep`, `--inject`, `--interactive/-i`, `--parallel`, `--max-workers` | 派发 Claude Code 子进程，支持单任务或并行多任务 |
 | `mgg status [task_id]` | 查看任务状态 | 可选 task_id | 无 id 列出所有，有 id 显示详情 |
 | `mgg ls` | 列出可用 Skill | 无 | 扫描 `~/.claude/skills/` |
 | `mgg resume <task_id>` | 重跑失败任务 | task_id | 用相同 prompt 重新执行 |
 | `mgg decide <task_id> <choice>` | 为任务记录决策 | task_id, choice | 非交互式记录决策 |
+
+## 并行执行（迭代4 新增）
+
+| 功能 | 说明 |
+|------|------|
+| `mgg run p1 p2 p3 --parallel` | 同时执行多个 prompt，每个独立子进程 |
+| `--max-workers N` | 控制最大并发数（默认 3） |
+| 错误隔离 | 单任务失败不影响其他任务 |
+| 独立持久化 | 每个任务独立保存 state.json + result.md |
+| Skill 推理 | 使用第一个 prompt 推理 skill，所有任务共享 |
 
 ## Skill 路由
 
@@ -60,5 +70,34 @@
 
 ## 测试覆盖
 
-- 82 个测试用例，覆盖率 83%
-- 覆盖：决策通道解析、输出解析、Skill 路由、任务状态、交互循环、CLI 命令、argparse
+- 123 个测试用例，整体覆盖率 91%
+- 核心模块覆盖率：决策 98%、路由 100%、持久化 100%、常量 100%
+- 覆盖：决策通道解析、预分析决策、输出解析、Skill 路由、任务状态、交互循环、CLI 命令、并行调度、依赖等待、人工提示、argparse
+
+## 预分析决策（Preflight，迭代5 新增）
+
+`mgg run` 默认在**执行主任务前**先做轻量预分析：
+
+1. **分析** — Claude 子进程对 prompt 做轻量分析，列出需要你确认的决策点（数据库选择、认证方式等）
+2. **确认** — 批量展示所有决策点，你逐个选择或跳过
+3. **注入** — 将已确认的决策以 `[已确认决策]` 结构体注入主 prompt，Claude 直接按决策执行
+4. **兜底** — 执行中 Claude 产出了未预料到的决策，走事后追问机制，不丢
+
+```
+mgg run "实现登录模块"
+  → 预分析: 检测到 2 个决策点
+    1. 数据库: [Postgres/SQLite] → 选 Postgres
+    2. 认证: [JWT/Session] → 选 JWT
+  → 注入决策 → 执行主任务（不再中断）
+  → 若 Claude 输出意外决策 → 事后追问
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--no-preflight` | 跳过预分析，直接执行（行为等同于迭代4）|
+
+## 规划中
+
+| 功能 | 迭代 | 说明 |
+|------|------|------|
+| — | — | 暂无 |
