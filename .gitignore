@@ -1,0 +1,6 @@
+.mgg/
+__pycache__/
+.pytest_cache/
+.coverage
+.benchmarks/
+.fat/
